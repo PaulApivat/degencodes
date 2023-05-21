@@ -160,7 +160,7 @@ def main():
     sspell["balance"] = get_token_balance(sspell_contract, user)
     sspell["decimals"] = get_token_decimals(sspell_contract)
 
-    if get_approval(spell["contract"], router_contract, user):
+    if (spell["balance"] == 0) and (sspell["balance"] == 0):
         sys.exit("No tokens found!")
 
     # Confirm approval for tokens
