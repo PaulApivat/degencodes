@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 os.environ.get('WEB3_INFURA_PROJECT_ID')
+os.environ.get('ETHERSCAN_TOKEN')
 
 # contract verify on etherscan
 SPELL_CONTRACT_ADDRESS = "0x090185f2135308bad17527004364ebcc2d37e5f6"
