@@ -159,4 +159,86 @@ def get_token_balance(token, user):
         print(f"Exception in get_token_balance: {e}")
         raise 
 
-    
+
+# get_token_decimals(token) which retrieves the decimals variable for a given token contract address.
+def get_token_decimals(token):
+    try:
+        return token.decimals.call()
+    except Exception as e:
+        print(f"Exception in get_token_decimals: {e}")
+        raise 
+
+
+# token_approve(token, router, value="unlimited") which will set the token approval for a given router contract 
+# to spend tokens at a given token contract address on behalf of our user. 
+# Note this includes a default value that will set unlimited approval if not specified. 
+# I do this for my bot since it only holds tokens that I am actively swapping, and do not want to issue hundreds of approvals for partial balances.
+
+def token_approve(token, router, value="unlimited"):
+    if DRY_RUN:
+        return True
+
+    if value == "unlimited":
+        try:
+            token.approve(
+                router,
+                2 ** 256 - 1,
+                {"from": user},
+            )
+            return True
+        except Exception as e:
+            print(f"Exception in token_approve: {e}")
+            raise 
+    else:
+        try:
+            token.approve(
+                router,
+                value,
+                {"from": user},
+            )
+            return True 
+        except Exception as e:
+            print(f"Exception in token_approve: {e}")
+            raise
+
+
+
+# get_swap_rate(token_in_quantity, token_in_address, token_out_address, router) 
+# which returns a two-value tuple with values for token quantity in and token quantity out 
+# for a given pair of token contract addresses and router contract address.
+def get_swap_rate(token_in_quantity, token_in_address, token_out_address, router):
+    try:
+        return router.getAmountsOut(
+            token_in_quantity, [token_in_address, token_out_address]
+        )
+    except Exception as e:
+        print(f"Exception in get_swap_rate: {e}")
+        return False 
+
+
+# token_swap(token_in_quantity, token_in_address, token_out_quantity, token_out_address, router) which calls the router’s swapExactTokensForTokens() method
+# for the given token quantities, addresses, and router contract.
+
+def token_swap(
+    token_in_quantity,
+    token_in_address,
+    token_out_quantity,
+    token_out_address,
+    router,
+):
+    if DRY_RUN:
+        return True 
+
+    try:
+        router.swapExactTokensForTokens(
+            token_in_quantity,
+            int(token_out_quantity * (1 - SLIPPAGE)),
+            [token_in_address, token_out_address],
+            user.address,
+            int(1000 * (time.time()) + 30 * SECOND),
+            {"from": user},
+        )
+        return True
+    except Exception as e:
+        print(f"Exception: {e}")
+        return False 
