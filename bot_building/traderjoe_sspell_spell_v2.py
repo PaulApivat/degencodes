@@ -64,6 +64,91 @@ ONE_SHOT = False
 # How often to run the main loop (in seconds)
 LOOP_TIME = 1.0
 
+
+# ========== Function Definitions ===========
+# ---- Setup - Global Variables, Network, Account -------
+# ---- Setup - Contracts and Token Dictionaries ---------
+
+# 
+# Start main() arbitrage loop
+#
+
+"""
+- the main() loop contains all setup and swapping logic
+- 'global' variables allows _other_variables outside of main() to access to reduce variable count
+- however, global variables are frowned upon because they cause bugs
+        due to one functioning acting on the value of global variables 
+        before another function has chance to set it to an appropriate value
+
+- connect to avax-main network to set transaction priority fee and load "trade_account" 
+- wrap in try-except to have program terminate if fail 
+"""
+
+def main():
+
+    global spell_contract 
+    global sspell_contract 
+    global traderjoe_router_contract 
+    global spell 
+    global sspell 
+
+    try:
+        network.connect("avax-main")
+        # Avalanche supports EIP-1559 transactions, so we set the priority fee
+        # and allow the base fee to change as needed
+        network.priority_fee('5 gwei')
+        # Can set a limit on maximum fee, if desired
+        #network.max_fee('200 gwei')
+    except: 
+        sys.exit(
+            "Could not load account! Verify that your account is listed using 'brownie accounts list' and that you are using the correct password. If you have not added an account, run 'brownie accounts' now."
+        )
+
+
+    # Use contract_load helper function to create objects to interact with TraderJoe router
+    print("\nContracts loaded:")
+    spell_contract = contract_load(SPELL_CONTRACT_ADDRESS, "Avalanche Token: SPELL")
+    sspell_contract = contract_load(SSPELL_CONTRACT_ADDRESS, "Avalance Token: sSPELL")
+    router_contract = contract_load(TRADERJOE_ROUTER_CONTRACT_ADDRESS, "TraderJoe: Router")
+
+    # create two dictionaries
+    # 'None' values anticipate being over-written later
+    spell = {
+        "address": SPELL_CONTRACT_ADDRESS,
+        "contract": spell_contract,
+        "name": None,
+        "symbol": None,
+        "balance": None,
+        "decimals": None,
+    }
+
+    sspell = {
+        "address": SSPELL_CONTRACT_ADDRESS,
+        "contract": sspell_contract,
+        "name": None,
+        "symbol": None,
+        "balance": None,
+        "decimals": None,
+    }
+
+    spell["symbol"] = get_token_symbol(spell["contract"])
+    spell["name"] = get_token_name(spell["contract"])
+    spell["balance"] = get_token_balance(spell_contract, user)
+    spell["decimals"] = get_token_decimals(spell_contract)
+
+    sspell["symbol"] = get_token_symbol(sspell["contract"])
+    sspell["name"] = get_token_name(sspell["contract"])
+    sspell["balance"] = get_token_balance(sspell_contract, user)
+    sspell["decimals"] = get_token_decimals(sspell_contract)
+
+    if (spell["balance"] == 0) and (sspell["balance"] == 0):
+        sys.exit("No tokens found:")
+
+
+
+
+
+
 """
 Swap Thresholds and Slippage
 - This is DeFi-related 
