@@ -46,6 +46,16 @@ HOUR = 60 * MINUTE
 DAY = 24 * HOUR
 PERCENT = 0.01
 
+
+
+
+THRESHOLD_SPELL_TO_SSPELL = 0.2 * PERCENT
+THRESHOLD_SSPELL_TO_SPELL = 0.5 * PERCENT
+SLIPPAGE = 0.1 * PERCENT
+
+STAKING_RATE_FILENAME = '.abra_rate'
+
+
 """
 Bot Options 
 - instead of setting options at runtime
@@ -68,6 +78,8 @@ LOOP_TIME = 1.0
 # ========== Function Definitions ===========
 # ---- Setup - Global Variables, Network, Account -------
 # ---- Setup - Contracts and Token Dictionaries ---------
+# ---- Setup - Approvals and Staking Rate ---------------
+# ---- Main Loop - Balance Refresh and Staking Updater --
 
 # 
 # Start main() arbitrage loop
@@ -144,6 +156,64 @@ def main():
     if (spell["balance"] == 0) and (sspell["balance"] == 0):
         sys.exit("No tokens found:")
 
+    # Confirm approvals for tokens
+    print("\nChecking Approvals:")
+
+    if get_approval(spell["contract"], router_contract, user):
+        print(f"• {spell['symbol']} OK")
+    else:
+        token_approve(spell["contract"], router_contract)
+
+    if get_approval(sspell["contract"], router_contract, user):
+        print(f"• {sspell['symbol']} OK")
+    else:
+        token_approve(sspell["contract"], router_contract)
+
+    try:
+        with open(STAKING_RATE_FILENAME, "r") as file:
+            base_staking_rate = float(file.read().strip())
+            print(f"\nEthereum L1 Staking Rate: {base_staking_rate}")
+    except FileNotFoundError:
+        sys.exit(
+            "Cannot load the base Abracadabra SPELL/sSPELL staking rate. Run `python3 abra_rate.py` and try again."
+        )
+
+    balance_refresh = True
+
+    # 
+    # Start of arbitrage loop
+    # 
+    while True:
+
+        loop_start = time.time()
+
+        try:
+            with open(STAKING_RATE_FILENAME, "r") as file:
+                if (result := float(file.read().strip())) != base_staking_rate:
+                    base_staking_rate = result
+                    print(f"Updated staking rate: {base_staking_rate}")
+        except FileNotFoundError:
+            sys.exit(
+                "Cannot load the base Abracadabra SPELL/sSPELL staking rate. Run `python3 abra_rate.py` and try again."
+            )
+
+        if balance_refresh:
+            time.sleep(10)
+            spell["balance"] = get_token_balance(spell_contract, user)
+            sspell["balance"] = get_token_balance(sspell_contract, user)
+            print("\nAccount Balance:")
+            print(
+                f"• Token #1: {int(spell['balance']/(10**spell['decimals']))} {spell['symbol']} ({spell['name']})"
+            )
+            print(
+                f"• Token #2: {int(sspell['balance']/(10**sspell['decimals']))} {sspell['symbol']} ({sspell['name']})"
+            )
+            print()
+            balance_refresh = False 
+            last_ratio_spell_to_sspell = 0
+            last_ratio_sspell_to_spell = 0
+
+            
 
 
 
