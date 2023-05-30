@@ -80,6 +80,7 @@ LOOP_TIME = 1.0
 # ---- Setup - Contracts and Token Dictionaries ---------
 # ---- Setup - Approvals and Staking Rate ---------------
 # ---- Main Loop - Balance Refresh and Staking Updater --
+# ---- Main Loop - Quotes, Swaps, and Timing ------------
 
 # 
 # Start main() arbitrage loop
@@ -213,6 +214,54 @@ def main():
             last_ratio_spell_to_sspell = 0
             last_ratio_sspell_to_spell = 0
 
+        if spell["balance"]:
+
+            if result := get_swap_rate(
+                token_in_quantity=spell["balance"],
+                token_in_address=spell["address"],
+                token_out_address=sspell["address"],
+                router=router_contract,
+            ):
+
+                spell_in, sspell_out = result
+                ratio_spell_to_sspell = round(sspell_out / spell_in, 4)
+
+                # print and save any updated swap values since last loop 
+                if ratio_spell_to_sspell != last_ratio_spell_to_sspell:
+                    print(
+                        f"{datetime.datetime.now().strftime('[%I:%M:%S %p]')} {spell['symbol']} → {sspell['symbol']}: ({ratio_spell_to_sspell:.4f}/{1 / (base_staking_rate * (1 + THRESHOLD_SPELL_TO_SSPELL)):.4f})"
+                    )
+                    last_ratio_spell_to_sspell = ratio_spell_to_sspell
+                else:
+                    # abandon the for loop to avoid re-using stale data 
+                    break 
+
+                # execute SPELL -> sSPELL arb if trigger is satisfied 
+                if ratio_spell_to_sspell >= 1 / (
+                    base_staking_rate * (1 + THRESHOLD_SPELL_TO_SSPELL)
+                ):
+                    print(
+                        f"*** EXECUTING SWAP OF {int(spell_in / (10**spell['decimals']))} {spell['symbol']} AT BLOCK {chain.height} ***"
+                    )
+                    if token_swap(
+                        token_in_quantity=spell_in,
+                        token_in_address=spell["address"],
+                        token_out_quantity=sspell_out,
+                        token_out_address=sspell["address"],
+                        router=router_contract,
+                    ):
+                        balance_refresh = True 
+                        if ONE_SHOT:
+                            sys.exit("single shot complete!")
+
+        loop_end = time.time()
+
+        # Control the loop timing more precisely by measuring start and end time and sleeping as needed
+        if (loop_end - loop_start) >= LOOP_TIME:
+            continue 
+        else:
+            time.sleep(LOOP_TIME - (loop_end - loop_start))
+            continue 
             
 
 
