@@ -14,6 +14,10 @@ TRADERJOE_POOL_CONTRACT_ADDRESS = "0x033C3Fc1fC13F803A233D262e24d1ec3fd4EFB48"
 SPELL_CONTRACT_ADDRESS = "0xce1bffbd5374dac86a2893119683f4911a2f7814"
 SSPELL_CONTRACT_ADDRESS = "0x3ee97d514bbef95a2f110e6b9b73824719030f7a"
 
+# use python-dotenv to get API key 
+from dotenv import load_dotenv 
+load_dotenv()
+
 # use python-dotenv to get API key
 os.environ.get('SNOWTRACE_TOKEN')
 
