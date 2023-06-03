@@ -146,6 +146,39 @@ def main():
     network.priority_fee("5 gwei")
     balance_refresh = True
 
+    # 
+    # Start of arbitrage loop
+    # 
+
+    while True:
+
+        loop_start = time.time()
+
+        try:
+            with open(BASE_STAKING_RATE_FILENAME, "r") as file:
+                if (result := Decimal(file.read().strip())) != base_staking_rate:
+                    base_staking_rate = result 
+                    print(f"Updated staking rate: {base_staking_rate}")
+        except FileNotFoundError:
+            sys.exit(
+                "Cannot load the base Abracadabra SPELL/sSPELL staking rate. Run `python3 ethereum_abracadabra_rate_watcher.py` and try again."
+            )
+
+        if balance_refresh:
+            time.sleep(10)
+            spell["balance"] = get_token_balance(spell_contract, user)
+            sspell["balance"] = get_token_balance(sspell_contract, user)
+            print("\nAccount Balance:")
+            print(
+                f"• Token #1: {int(spell['balance']/(10**spell['decimals']))} {spell['symbol']} ({spell['name']})"
+            )
+            print(
+                f"• Token #2: {int(sspell['balance']/(10**sspell['decimals']))} {sspell['symbol']} ({sspell['name']})"
+            )
+            print()
+            balance_refresh = False
+
+    
         # get quotes and execute SPELL -> sSPELL swaps only if we have a balance of SPELL
 
         if spell["balance"]:
@@ -153,12 +186,13 @@ def main():
             try:
                 # token0 (x) is sSPELL
                 # token1 (y) is SPELL
-                x0, y0 = lp.getReserves.call()[0:2]
+                x0, y0 = traderjoe_lp.getReserves.call()[0:2]
             except:
                 # restarts loop if getReserves() fails
                 continue 
 
             # find maximum SPELL input at desired sSPELL/SPELL ratio "C"
+
             if spell_in := get_tokens_in_for_ratio_out(
                 pool_reserves_token0=x0,
                 pool_reserves_token1=y0,
@@ -188,8 +222,70 @@ def main():
                     token_in_address=spell["address"],
                     token_out_quantity=sspell_out,
                     token_out_address=sspell["address"],
-                    router=router,
+                    router=traderjoe_router,
                 ):
                     balance_refresh = True 
                     if ONE_SHOT:
                         sys.exit("single shot complete!")
+
+        # get quotes and excute sSPELL -> SPELL swaps only if we have a balance of sSPELL
+        if sspell["balance"]:
+
+            try:
+                # token0 (x) is sSPELL
+                # token1 (y) is SPELL 
+                x0, y0 = traderjoe_lp.getReserves.call()[0:2]
+            except:
+                continue 
+
+            # finds maximum sSPELL input at desired sSPELL / SPELL ratio "C"
+
+            if sspell_in := get_tokens_in_for_ratio_out(
+                pool_reserves_token0=x0,
+                pool_reserves_token1=y0,
+                # SPELL (token1) out 
+                token1_out=True,
+                token0_per_token1=Decimal(
+                    str(1 / (base_staking_rate * (1 + THRESHOLD_SSPELL_TO_SPELL)))
+                ),
+                fee=Decimal("0.003"),
+            ):
+                if sspell_in > sspell["balance"]:
+                    sspell_in = sspell["balance"]
+
+                # calculate SPELL output from sSPELL input calculated above (used by token_swap to set amountOutMin)
+                spell_out = get_tokens_out_for_tokens_in(
+                    pool_reserves_token0=x0,
+                    pool_reserves_token1=y0,
+                    quantity_token0_in=sspell_in,
+                    fee=Decimal("0.003"),
+                )
+
+                print(
+                    f"*** EXECUTING SWAP FOR {sspell_in // (10 ** sspell['decimals'])} sSPELL ***"
+                )
+                if token_swap(
+                    token_in_quantity=sspell_in,
+                    token_in_address=sspell["address"],
+                    token_out_quantity=spell_out,
+                    token_out_address=spell["address"],
+                    router=traderjoe_router,
+                ):
+                    balance_refresh = True 
+                    if ONE_SHOT:
+                        sys.exit("single shot conmplete!")
+
+        loop_end = time.time()
+
+        # Control the loop timing more precisely by measuring start and end time and sleeping as needed
+        if (loop_end - loop_start) >= LOOP_TIME:
+            continue 
+        else:
+            time.sleep(LOOP_TIME - (loop_end - loop_start))
+            continue 
+
+    #
+    # End of arbitrage loop
+    #
+
+    
