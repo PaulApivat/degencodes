@@ -1,12 +1,18 @@
+import sys
+import time
+import datetime
+import requests
+import os
+import json
+from decimal import Decimal
+from brownie import *
 
-import sys 
-import time 
-import datetime 
-import requests 
-import os 
-import json 
-from decimal import Decimal 
-from brownie import * 
+# use python-dotenv to get API key 
+from dotenv import load_dotenv 
+load_dotenv()
+
+os.environ.get('WEB3_INFURA_PROJECT_ID')
+os.environ.get('ETHERSCAN_TOKEN')
 
 # Contract addresses (verify on Snowtrace)
 TRADERJOE_ROUTER_CONTRACT_ADDRESS = "0x60aE616a2155Ee3d9A68541Ba4544862310933d4"
@@ -14,15 +20,17 @@ TRADERJOE_POOL_CONTRACT_ADDRESS = "0x033C3Fc1fC13F803A233D262e24d1ec3fd4EFB48"
 SPELL_CONTRACT_ADDRESS = "0xce1bffbd5374dac86a2893119683f4911a2f7814"
 SSPELL_CONTRACT_ADDRESS = "0x3ee97d514bbef95a2f110e6b9b73824719030f7a"
 
+# Change to match your explorer API key
+# SNOWTRACE_API_KEY = ""
+# os.environ["SNOWTRACE_TOKEN"] = SNOWTRACE_API_KEY
+
 # use python-dotenv to get API key
 os.environ.get('SNOWTRACE_TOKEN')
 
-# Helper Values
 SECOND = 1
 MINUTE = 60 * SECOND
 HOUR = 60 * MINUTE
 DAY = 24 * HOUR
-PERCENT = 0.01
 
 # SPELL -> sSPELL swap targets
 # a zero value will trigger a swap when the ratio matches base_staking_rate exactly
@@ -34,7 +42,7 @@ THRESHOLD_SPELL_TO_SSPELL = Decimal("0.02")
 # a positive value will trigger a (sSPELL -> SPELL) swap when the ratio is above base_staking_rate
 THRESHOLD_SSPELL_TO_SPELL = Decimal("0.05")
 
-SLIPPAGE = Decimal("0.001") # tolerated slippage in swap price (0.1%)
+SLIPPAGE = Decimal("0.001")  # tolerated slippage in swap price (0.1%)
 
 BASE_STAKING_RATE_FILENAME = ".abra_rate"
 
@@ -45,23 +53,14 @@ ONE_SHOT = False
 # How often to run the main loop (in seconds)
 LOOP_TIME = 1.0
 
-"""
-[MAIN PROGRAM LOOP]
 
-if token['balance']:
-    get pool reserves 
-    check maximum input using get_tokens_in_for_ratio_out()
-    check maximum output using get_tokens_out_from_tokens_in()
-    call token_swap() using input and output amounts from the two functions 
-    refresh balances and restart loop
-"""
 def main():
 
-    global traderjoe_router 
-    global traderjoe_lp 
-    global spell 
-    global sspell 
-    global user 
+    global traderjoe_router
+    global traderjoe_lp
+    global spell
+    global sspell
+    global user
 
     try:
         network.connect("avax-main")
@@ -70,13 +69,12 @@ def main():
             "Could not connect to Avalanche! Verify that brownie lists the Avalanche Mainnet using 'brownie networks list'"
         )
 
-    try: 
+    try:
         user = accounts.load("trade_account")
     except:
         sys.exit(
             "Could not load account! Verify that your account is listed using 'brownie accounts list' and that you are using the correct password. If you have not added an account, run 'brownie accounts new' now."
         )
-
 
     print("\nContracts loaded:")
     spell_contract = contract_load(SPELL_CONTRACT_ADDRESS, "Avalanche Token: SPELL")
@@ -85,7 +83,6 @@ def main():
     traderjoe_router = contract_load(
         TRADERJOE_ROUTER_CONTRACT_ADDRESS, "TraderJoe: Router"
     )
-
     traderjoe_lp = contract_load(
         TRADERJOE_POOL_CONTRACT_ADDRESS, "TraderJoe LP: SPELL-sSPELL"
     )
@@ -132,8 +129,8 @@ def main():
     if get_approval(sspell["contract"], traderjoe_router, user):
         print(f"• {sspell['symbol']} OK")
     else:
-        token_approve(sspell["contract"], traderjoe_router)    
-    
+        token_approve(sspell["contract"], traderjoe_router)
+
     try:
         with open(BASE_STAKING_RATE_FILENAME, "r") as file:
             base_staking_rate = Decimal(file.read().strip())
@@ -146,10 +143,9 @@ def main():
     network.priority_fee("5 gwei")
     balance_refresh = True
 
-    # 
+    #
     # Start of arbitrage loop
-    # 
-
+    #
     while True:
 
         loop_start = time.time()
@@ -157,7 +153,7 @@ def main():
         try:
             with open(BASE_STAKING_RATE_FILENAME, "r") as file:
                 if (result := Decimal(file.read().strip())) != base_staking_rate:
-                    base_staking_rate = result 
+                    base_staking_rate = result
                     print(f"Updated staking rate: {base_staking_rate}")
         except FileNotFoundError:
             sys.exit(
@@ -178,9 +174,7 @@ def main():
             print()
             balance_refresh = False
 
-    
         # get quotes and execute SPELL -> sSPELL swaps only if we have a balance of SPELL
-
         if spell["balance"]:
 
             try:
@@ -188,25 +182,24 @@ def main():
                 # token1 (y) is SPELL
                 x0, y0 = traderjoe_lp.getReserves.call()[0:2]
             except:
-                # restarts loop if getReserves() fails
-                continue 
+                continue
 
-            # find maximum SPELL input at desired sSPELL/SPELL ratio "C"
-
+            # finds maximum SPELL input at desired sSPELL/SPELL ratio "C"
             if spell_in := get_tokens_in_for_ratio_out(
                 pool_reserves_token0=x0,
                 pool_reserves_token1=y0,
-                # sSPELL (token0) out 
+                # sSPELL (token0) out
                 token0_out=True,
                 token0_per_token1=Decimal(
                     str(1 / (base_staking_rate * (1 + THRESHOLD_SPELL_TO_SSPELL)))
                 ),
                 fee=Decimal("0.003"),
             ):
+
                 if spell_in > spell["balance"]:
                     spell_in = spell["balance"]
 
-                # calculate sSPELL output from SPELL input calculated above (used by token_swap to get amountOutMin)
+                # calculate sSPELL output from SPELL input calculated above (used by token_swap to set amountOutMin)
                 sspell_out = get_tokens_out_for_tokens_in(
                     pool_reserves_token0=x0,
                     pool_reserves_token1=y0,
@@ -224,32 +217,32 @@ def main():
                     token_out_address=sspell["address"],
                     router=traderjoe_router,
                 ):
-                    balance_refresh = True 
+                    balance_refresh = True
                     if ONE_SHOT:
                         sys.exit("single shot complete!")
 
-        # get quotes and excute sSPELL -> SPELL swaps only if we have a balance of sSPELL
+        # get quotes and execute sSPELL -> SPELL swaps only if we have a balance of sSPELL
         if sspell["balance"]:
 
             try:
                 # token0 (x) is sSPELL
-                # token1 (y) is SPELL 
+                # token1 (y) is SPELL
                 x0, y0 = traderjoe_lp.getReserves.call()[0:2]
             except:
-                continue 
+                continue
 
-            # finds maximum sSPELL input at desired sSPELL / SPELL ratio "C"
-
+            # finds maximum sSPELL input at desired sSPELL/SPELL ratio "C"
             if sspell_in := get_tokens_in_for_ratio_out(
                 pool_reserves_token0=x0,
                 pool_reserves_token1=y0,
-                # SPELL (token1) out 
+                # SPELL (token1) out
                 token1_out=True,
                 token0_per_token1=Decimal(
                     str(1 / (base_staking_rate * (1 + THRESHOLD_SSPELL_TO_SPELL)))
                 ),
                 fee=Decimal("0.003"),
             ):
+
                 if sspell_in > sspell["balance"]:
                     sspell_in = sspell["balance"]
 
@@ -271,22 +264,22 @@ def main():
                     token_out_address=spell["address"],
                     router=traderjoe_router,
                 ):
-                    balance_refresh = True 
+                    balance_refresh = True
                     if ONE_SHOT:
-                        sys.exit("single shot conmplete!")
+                        sys.exit("single shot complete!")
 
         loop_end = time.time()
 
         # Control the loop timing more precisely by measuring start and end time and sleeping as needed
         if (loop_end - loop_start) >= LOOP_TIME:
-            continue 
+            continue
         else:
             time.sleep(LOOP_TIME - (loop_end - loop_start))
-            continue 
-
+            continue
     #
     # End of arbitrage loop
     #
+
 
 def account_get_balance(account):
     try:
@@ -305,15 +298,15 @@ def contract_load(address, alias):
         contract.set_alias(alias)
     finally:
         print(f"• {alias}")
-        return contract 
+        return contract
 
-    
+
 def get_approval(token, router, user):
     try:
         return token.allowance.call(user, router.address)
     except Exception as e:
         print(f"Exception in get_approval: {e}")
-        return False 
+        return False
 
 
 def get_token_name(token):
@@ -321,7 +314,7 @@ def get_token_name(token):
         return token.name.call()
     except Exception as e:
         print(f"Exception in get_token_name: {e}")
-        raise 
+        raise
 
 
 def get_token_symbol(token):
@@ -329,7 +322,7 @@ def get_token_symbol(token):
         return token.symbol.call()
     except Exception as e:
         print(f"Exception in get_token_symbol: {e}")
-        raise 
+        raise
 
 
 def get_token_balance(token, user):
@@ -337,7 +330,7 @@ def get_token_balance(token, user):
         return token.balanceOf.call(user)
     except Exception as e:
         print(f"Exception in get_token_balance: {e}")
-        raise 
+        raise
 
 
 def get_token_decimals(token):
@@ -345,12 +338,12 @@ def get_token_decimals(token):
         return token.decimals.call()
     except Exception as e:
         print(f"Exception in get_token_decimals: {e}")
-        raise 
+        raise
 
 
 def token_approve(token, router, value="unlimited"):
     if DRY_RUN:
-        return True 
+        return True
 
     if value == "unlimited":
         try:
@@ -359,10 +352,10 @@ def token_approve(token, router, value="unlimited"):
                 2 ** 256 - 1,
                 {"from": user},
             )
-            return True 
+            return True
         except Exception as e:
             print(f"Exception in token_approve: {e}")
-            raise 
+            raise
     else:
         try:
             token.approve(
@@ -370,10 +363,10 @@ def token_approve(token, router, value="unlimited"):
                 value,
                 {"from": user},
             )
-            return True 
+            return True
         except Exception as e:
             print(f"Exception in token_approve: {e}")
-            raise 
+            raise
 
 
 def token_swap(
@@ -384,9 +377,9 @@ def token_swap(
     router,
 ):
     if DRY_RUN:
-        return True 
-    
-    try: 
+        return True
+
+    try:
         router.swapExactTokensForTokens(
             token_in_quantity,
             int(token_out_quantity * (1 - SLIPPAGE)),
@@ -395,10 +388,10 @@ def token_swap(
             1000 * int(time.time() + 60 * SECOND),
             {"from": user},
         )
-        return True 
+        return True
     except Exception as e:
         print(f"Exception: {e}")
-        return False 
+        return False
 
 
 def get_tokens_in_for_ratio_out(
@@ -412,25 +405,25 @@ def get_tokens_in_for_ratio_out(
     assert not (token0_out and token1_out)
     assert token0_per_token1
 
-    # token1 input, token0 output 
+    # token1 input, token0 output
     if token0_out:
-        # dy = x0/C - y0/(1 - FEE)
+        # dy = x0/C - y0/(1-FEE)
         dy = int(
             pool_reserves_token0 / token0_per_token1 - pool_reserves_token1 / (1 - fee)
         )
         if dy > 0:
-            return dy 
+            return dy
         else:
-            return 0 
+            return 0
 
     # token0 input, token1 output
     if token1_out:
-        # dx = y0*C - x0/(1 - FEE)
+        # dx = y0*C - x0/(1-FEE)
         dx = int(
             pool_reserves_token1 * token0_per_token1 - pool_reserves_token0 / (1 - fee)
         )
         if dx > 0:
-            return dx 
+            return dx
         else:
             return 0
 
@@ -447,12 +440,16 @@ def get_tokens_out_for_tokens_in(
     assert not (quantity_token0_in and quantity_token1_in)
     assert quantity_token0_in or quantity_token1_in
 
-
     if quantity_token0_in:
-        return (pool_reserves_token1 * quantity_token0_in * (1 - fee)) // (pool_reserves_token0 + quantity_token0_in * (1 - fee))
+        return (pool_reserves_token1 * quantity_token0_in * (1 - fee)) // (
+            pool_reserves_token0 + quantity_token0_in * (1 - fee)
+        )
 
     if quantity_token1_in:
-        return (pool_reserves_token0 * quantity_token1_in * (1 - fee)) // (pool_reserves_token1 + quantity_token1_in * (1 - fee))
+        return (pool_reserves_token0 * quantity_token1_in * (1 - fee)) // (
+            pool_reserves_token1 + quantity_token1_in * (1 - fee)
+        )
+
 
 # Only executes main loop if this file is called directly
 if __name__ == "__main__":
