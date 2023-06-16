@@ -46,8 +46,11 @@ $ brownie console --network ankr-avax-main-websocket
 >>> lp = Contract.from_explorer('0xA389f9430876455C36478DeEa9769B7Ca4E3DDB1')
 
 
-NOTE: ValueError should be from trying to connect to an ETH connection, rather than Avax
+
 ValueError: {'code': -32601, 'message': 'the method eth_newFilter does not exist/is not available'}
+
+This works: filter = web3.eth.contract(address=lp.address, abi=lp.abi).events.Sync.createFilter()
+Isolate issue: .createFilter(fromBlock='latest')
 
 >>> filter = web3.eth.contract(address=lp.address, abi=lp.abi).events.Sync.createFilter(fromBlock='latest')
 """
