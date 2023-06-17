@@ -34,7 +34,7 @@ SUCCESS: A new network 'ankr-avax-main-websocket' has been added
     ├─id: ankr-avax-main-websocket
     ├─chainid: 43114
     ├─explorer: https://api.snowtrace.io/api
-    └─host: [fill in your WSS connection]
+    └─host: wss://fill-in-your-WSS-connection
 
 ** Start Brownie Console **
 0. export SNOWTRACE_TOKEN
@@ -53,4 +53,6 @@ This works: filter = web3.eth.contract(address=lp.address, abi=lp.abi).events.Sy
 Isolate issue: .createFilter(fromBlock='latest')
 
 >>> filter = web3.eth.contract(address=lp.address, abi=lp.abi).events.Sync.createFilter(fromBlock='latest')
+
+>>> filter = web3.eth.contract(address=lp.address, abi=lp.abi).events.Sync.create_filter(fromBlock='latest')
 """
